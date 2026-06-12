@@ -1,0 +1,11 @@
+# personal data — never commit
+raw/
+processed/
+notes/
+projects/
+visualizations/
+
+.venv/
+__pycache__/
+.DS_Store
+.ipynb_checkpoints/

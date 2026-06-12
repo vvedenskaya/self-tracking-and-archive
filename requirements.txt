@@ -1,0 +1,10 @@
+beautifulsoup4>=4.12
+lxml>=5.0
+cssselect>=1.2
+pandas>=2.2
+pyarrow>=16.0
+duckdb>=1.0
+matplotlib>=3.9
+pymorphy3>=2.0
+pymorphy3-dicts-ru
+jupyter
