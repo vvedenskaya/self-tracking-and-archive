@@ -17,38 +17,27 @@ chart shown, read **[docs/WALKTHROUGH.md](docs/WALKTHROUGH.md)**.
 
 | Source | State |
 |---|---|
-| Telegram (143k messages, 618 chats, 2017–2026) | Parsed, analyzed, art piece done |
-| Gmail (7.6 GB mbox) | Planned next |
+| Telegram (143k messages, 618 chats, 2017–2026) | Parsed, lexical analysis, constellation art |
+| Meaning layer (embeddings, topics, sentiment) | Built — resumable local models |
+| Conflict heatmap (per relationship) | Built — keyword-based |
+| Gmail (7.6 GB mbox) | Planned |
 | Calendar / Maps | Planned |
-| Daily logs / reading journal | Planned |
+| Daily logs | Schema designed; intake not built |
 | Health / money | Planned as data arrives |
 
 ## How it's organized
 
-Two locations, kept separate on purpose:
-
-- **Code** lives here in `~/dev/self data` (this repo, safe to share/commit).
-- **Data** lives in `~/Desktop/personal archive/` and is *never* committed.
-  Nothing personal ever leaves your machine — all parsing and analysis is local.
+Everything lives in `~/dev/self data`. Code is committable; personal data
+dirs are gitignored and never leave your machine.
 
 ```
-~/Desktop/personal archive/
-  raw/          the original exports, never modified
-  processed/    clean Parquet tables produced by the parsers
-  visualizations/   charts (PNG) and art pieces (HTML)
-  notes/        written notes, Dear Data investigations
+~/dev/self data/
+  (committed)     parsers/, analysis/, art/, notebooks/, config.py, docs/
+  (gitignored)    raw/, processed/, visualizations/, notes/, people.yaml
 ```
 
-```
-~/dev/self data/   (this repo)
-  config.py                       all filesystem paths in one place
-  parsers/telegram.py             Telegram HTML export -> Parquet
-  analysis/telegram_analysis.py   timeline, relationship + rhythm charts
-  analysis/word_histograms.py     RU/EN word-frequency histograms
-  art/constellation.py            Relationship Constellations (HTML)
-  notebooks/01_telegram.ipynb     interactive exploration
-  docs/WALKTHROUGH.md             step-by-step explanation + all charts
-```
+Key paths: [config.py](config.py) (all filesystem paths),
+[docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) (full architecture walkthrough).
 
 ## Setup
 
@@ -59,17 +48,31 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Run the Telegram pipeline
+## Run the pipeline
+
+Phase 1 (parse + lexical analysis):
 
 ```bash
-python parsers/telegram.py            # parse chats -> telegram_messages.parquet
-python analysis/telegram_analysis.py  # 4 charts -> visualizations/
-python analysis/word_histograms.py    # word histograms + frequency table
-python art/constellation.py           # constellation.html art piece
+python parsers/telegram.py
+python analysis/telegram_analysis.py
+python analysis/word_histograms.py
+python analysis/signature_words.py
+python art/constellation.py
 ```
 
-Each script is idempotent: it reads from `raw/`, overwrites its outputs in
-`processed/` and `visualizations/`, and never touches the original exports.
+Phase 2 (meaning layer — embeddings and sentiment run in slices; repeat until
+`FINISHED`):
+
+```bash
+python analysis/embeddings.py
+python analysis/topics.py
+python analysis/sentiment.py
+```
+
+Full command list and dependency order: [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md).
+
+Each script is idempotent: it reads from `raw/` or `processed/`, overwrites its
+outputs, and never touches the original exports.
 
 ## What the tools are (plain language)
 
@@ -126,6 +129,6 @@ read them for you.
 
 ## Next
 
-The remaining phases (Gmail, Calendar/Maps, a `people.yaml` identity registry,
-daily-log intake, weekly data portraits) are described at the end of
-[docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) and in the project plan.
+Sentiment aggregate charts, Gmail, Calendar/Maps, daily-log intake, and weekly
+data portraits — see **Where things stand** in
+[docs/WALKTHROUGH.md](docs/WALKTHROUGH.md).

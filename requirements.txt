@@ -7,4 +7,21 @@ duckdb>=1.0
 matplotlib>=3.9
 pymorphy3>=2.0
 pymorphy3-dicts-ru
+pyyaml>=6.0
 jupyter
+
+# Phase 2 — meaning layer (topics + sentiment), local CPU models.
+# Pinned for Intel macOS (x86_64): torch caps at 2.2.2 (last x86 mac wheel),
+# which needs numpy<2 and a transformers from that era. Newer versions of any
+# of these break the others on this platform — do not bump without re-testing.
+numpy<2
+torch==2.2.2
+transformers==4.44.2
+sentence-transformers==3.3.1
+scikit-learn>=1.4,<1.6
+# Clustering for the topic pass (BERTopic). umap-learn/hdbscan pull numba ->
+# llvmlite, which fails to build here; the topic pass uses sklearn PCA+KMeans
+# instead, so these stay commented unless the build is sorted out.
+# bertopic>=0.16
+# umap-learn>=0.5
+# hdbscan>=0.8

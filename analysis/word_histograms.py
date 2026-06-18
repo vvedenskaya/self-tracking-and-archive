@@ -3,8 +3,8 @@
 - tokenizes all message text, lowercased
 - lemmatizes Russian words with pymorphy3 so думаю/думала/думаешь count once
 - drops RU + EN stopwords and one/two-letter tokens
-- writes processed/word_frequencies.parquet (lemma, is_me, year, count)
-  for reuse by later art pieces, plus histogram PNGs
+- writes processed/word_frequencies.parquet (lemma, chat_name, is_me, year,
+  count) for reuse by later art pieces, plus histogram PNGs
 
 Usage: python analysis/word_histograms.py
 """
@@ -94,14 +94,16 @@ def tokens(text: str):
 
 def count_words(df: pd.DataFrame) -> pd.DataFrame:
     counts: Counter = Counter()
-    for is_me, year, text in zip(df.is_me, df.ts_local.dt.year, df.text):
+    for chat, is_me, year, text in zip(
+        df.chat_name, df.is_me, df.ts_local.dt.year, df.text
+    ):
         if not text:
             continue
         for lemma in tokens(text):
-            counts[(lemma, is_me, year)] += 1
+            counts[(lemma, chat, is_me, year)] += 1
     out = pd.DataFrame(
-        [(k[0], k[1], k[2], v) for k, v in counts.items()],
-        columns=["lemma", "is_me", "year", "count"],
+        [(*k, v) for k, v in counts.items()],
+        columns=["lemma", "chat_name", "is_me", "year", "count"],
     )
     return out.sort_values("count", ascending=False).reset_index(drop=True)
 

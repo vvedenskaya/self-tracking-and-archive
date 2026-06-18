@@ -21,6 +21,15 @@ MAPS_DIR = RAW / "gmail" / "Takeout" / "Maps"
 
 TELEGRAM_PARQUET = PROCESSED / "telegram_messages.parquet"
 WORD_FREQ_PARQUET = PROCESSED / "word_frequencies.parquet"
+SIGNATURE_WORDS_PARQUET = PROCESSED / "signature_words.parquet"
 
-for _d in (PROCESSED, VISUALIZATIONS):
+# Phase 2 meaning layer: embeddings computed once, read by topics + sentiment.
+MESSAGE_EMBEDDINGS = PROCESSED / "message_embeddings.npy"
+MESSAGE_INDEX = PROCESSED / "message_index.parquet"
+SENTIMENT_PARQUET = PROCESSED / "sentiment.parquet"
+TOPICS_PARQUET = PROCESSED / "topics.parquet"
+
+PEOPLE_YAML = ARCHIVE / "people.yaml"
+
+for _d in (PROCESSED, VISUALIZATIONS, NOTES):
     _d.mkdir(parents=True, exist_ok=True)
