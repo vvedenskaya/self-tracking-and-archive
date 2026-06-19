@@ -90,6 +90,160 @@ conflict_heatmap.py
 
 ---
 
+## For backend engineers
+
+This is a **batch ETL + analytics pipeline**, not an application. No server, no
+requests — scripts read Parquet, write Parquet/PNG, and exit. The mental model
+that makes the repo legible: **trace data files, not import graphs.**
+
+### Job DAG (dependency order)
+
+```
+parsers/telegram.py
+    └── telegram_messages.parquet
+            ├── telegram_analysis.py        → PNGs
+            ├── word_histograms.py          → word_frequencies.parquet → PNGs
+            │       └── signature_words.py  → signature_words.parquet → PNGs
+            ├── textfilter.py               (library — not a job)
+            ├── embeddings.py               → message_index.parquet + message_embeddings.npy
+            │       ├── topics.py           → topics.parquet → topic river PNG
+            │       └── sentiment.py        → sentiment.parquet
+            ├── conflict_heatmap.py         → PNGs + notes report (reads telegram directly)
+            ├── people_registry.py          → people.yaml (append-only)
+            └── notes_generator.py          → notes/*.md
+
+art/constellation.py  ← reads telegram + embeddings + sentiment + topics → HTML
+```
+
+Run jobs top-to-bottom. If an upstream artifact is missing, the downstream script
+will fail or exit with a clear message.
+
+### Parquet filenames as the service map
+
+In a microservice backend, you navigate by API endpoints and database tables.
+Here, **Parquet filenames are the API between jobs.** [config.py](../config.py)
+is the registry — every artifact path in one file.
+
+| Backend analogy | This project |
+|---|---|
+| `POST /users` creates a row | `parsers/telegram.py` creates `telegram_messages.parquet` |
+| Service A writes table `orders` | `word_histograms.py` writes `word_frequencies.parquet` |
+| Service B reads from `orders` | `signature_words.py` reads `word_frequencies.parquet` |
+| OpenAPI / schema = contract | **Filename + columns = contract between scripts** |
+
+You do not need to memorize every script. Know which `.parquet` files exist,
+who writes them, who reads them — that *is* the architecture diagram.
+
+**Example debugging:** `topics.py` fails → check the map: it needs
+`message_embeddings.npy` + `message_index.parquet` from `embeddings.py`, which
+needs `telegram_messages.parquet` from `parsers/telegram.py`.
+
+### Script categories
+
+| Type | Examples | Pattern |
+|---|---|---|
+| **Parser** | `parsers/telegram.py` | raw → normalized Parquet; one source, one output schema |
+| **Transform** | `word_histograms.py`, `topics.py` | read Parquet → compute → write Parquet + optional viz |
+| **Library** | `textfilter.py` | imported by other scripts; never run directly |
+| **Long worker** | `embeddings.py`, `sentiment.py` | chunked batch job with on-disk checkpoints |
+
+### Parquet schemas (contracts between jobs)
+
+| Table | Grain | Key columns |
+|---|---|---|
+| `telegram_messages.parquet` | 1 row = 1 message | `chat_name`, `ts_utc`, `sender`, `text`, `is_me` |
+| `word_frequencies.parquet` | 1 row = lemma × chat × speaker × year | `lemma`, `count` |
+| `message_index.parquet` | 1 row = 1 embeddable message | `clean`, `is_code`; row *i* aligns with row *i* of `.npy` |
+| `topics.parquet` | 1 row = 1 message + topic | `topic`, `topic_label` |
+| `sentiment.parquet` | 1 row = 1 message + 6 emotion probs | `joy`, `sadness`, `anger`, … |
+
+### How to read any script
+
+Every script follows the same shape. Read in this order:
+
+1. **Module docstring** — I/O contract (inputs, outputs, CLI flags)
+2. **`import config`** — which artifacts it touches
+3. **`main()` / `build()`** — orchestration only (~10–30 lines)
+4. **One core function** — the actual transform (`tokens()`, `cluster()`, `detect_episodes()`)
+5. **Skip chart code on first pass** — matplotlib is presentation, not logic
+
+For [conflict_heatmap.py](../analysis/conflict_heatmap.py) specifically:
+`resolve_chat_name()` → lookup · `score_message()` / `is_boundary()` → rules ·
+`detect_episodes()` → clustering · `chart_*()` → rendering (read last).
+
+### Shared infrastructure patterns
+
+**Single config.** Every script does `sys.path.insert(…); import config`. All
+paths live in one place.
+
+**Idempotent overwrite.** Scripts overwrite their outputs (except
+`people_registry.py`, which append-only merges new chats). Safe to rerun.
+
+**Shared filter.** [textfilter.py](../analysis/textfilter.py) is middleware for
+Phase 2: `human_voice(df)` adds a `clean` column and drops forwards, code stubs,
+and media-only messages. Topics and sentiment must see identical input.
+
+**Chunked workers** (`embeddings.py`, `sentiment.py`) — same pattern as a
+resumable batch consumer:
+
+```
+chunk messages → process → write chunk_N to disk → exit after TIME_BUDGET (200s)
+re-run → skip existing chunks → continue
+all chunks done → merge → write final artifact → delete temp dir
+```
+
+Embedding 88k messages on CPU takes hours; the script yields instead of blocking.
+Checkpoints live in `processed/emb_chunks/` and `processed/sent_chunks/`.
+
+### Phase 1 vs Phase 2
+
+| | Phase 1 (lexical) | Phase 2 (semantic) |
+|---|---|---|
+| Compute | deterministic, fast | ML models, slow |
+| Dependencies | pandas, pymorphy3 | + torch, transformers |
+| Input | all messages | filtered human voice (~88k) |
+| Output | counts, charts | vectors, clusters, probabilities |
+| Re-run cost | seconds | hours (embeddings) |
+
+Phase 2 adds a **feature store** (`message_embeddings.npy`) that downstream jobs
+read without re-embedding.
+
+### Suggested reading order
+
+1. [config.py](../config.py) — full artifact map (2 min)
+2. [parsers/telegram.py](../parsers/telegram.py) — ingestion + schema (15 min)
+3. [analysis/textfilter.py](../analysis/textfilter.py) — shared preprocessing (5 min)
+4. [analysis/embeddings.py](../analysis/embeddings.py) — checkpoint pattern (10 min)
+5. [analysis/topics.py](../analysis/topics.py) — `main()` + `cluster()` (10 min)
+6. One tool script of interest — e.g. [conflict_heatmap.py](../analysis/conflict_heatmap.py)
+
+Skip on first pass: `notes_generator.py`, chart functions, `constellation.py`
+(art layer, not pipeline core).
+
+### Inspect the data layer without reading code
+
+```bash
+# Schema
+.venv/bin/python -c "import pandas as pd; print(pd.read_parquet('processed/telegram_messages.parquet').dtypes)"
+
+# Row counts
+.venv/bin/python -c "import pandas as pd; df=pd.read_parquet('processed/telegram_messages.parquet'); print(len(df), df.chat_name.nunique())"
+
+# SQL over parquet
+.venv/bin/python -c "import duckdb; print(duckdb.sql(\"SELECT chat_name, COUNT(*) c FROM 'processed/telegram_messages.parquet' GROUP BY 1 ORDER BY 2 DESC LIMIT 10\").df())"
+```
+
+Or use [notebooks/01_telegram.ipynb](../notebooks/01_telegram.ipynb) as a REPL.
+
+### What's intentionally not here (yet)
+
+No orchestrator (Airflow/Prefect), Makefile, or CLI wrapper — you run scripts
+manually in dependency order. No tests. No Parquet schema versioning. No API
+layer; the "API" is files on disk. Fine for a personal archive; the gap to
+production is deliberate.
+
+---
+
 ## Setup
 
 ```bash
