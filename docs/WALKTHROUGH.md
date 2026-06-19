@@ -371,6 +371,46 @@ Uses `people.yaml` to resolve `--person sofia_dro` → chat name.
 Future work: rebuild this heatmap using `sentiment.parquet` anger/fear aggregates
 instead of (or alongside) keyword patterns.
 
+## Step 15 — Constellation, upgraded (Phase 2 layers)
+
+**Script:** [art/constellation.py](../art/constellation.py)
+**Output:** `visualizations/constellation.html` — still one self-contained, offline file (~1 MB)
+
+The Phase 1 constellation plotted *when* relationships lived and *who* carried
+them. Phase 2 folds embeddings and sentiment into the same page as switchable
+layers. Everything is reduced to **per-chat summaries** before it ships, so the
+file stays ~1 MB and loads instantly — raw embeddings (130 MB) never reach the
+browser.
+
+- **Color → warmth.** A `lifespan / warmth` toggle. Warmth = mean(joy) −
+  mean(anger + sadness + fear) per chat, from `sentiment.parquet`, on a diverging
+  pink→grey→teal scale. 271/501 chats have enough scored messages; the rest stay
+  neutral grey. (Most relationships read warm — median +0.13.)
+- **Layout → meaning.** A `timeline / meaning` toggle. "Meaning" lays chats out
+  by a t-SNE of their mean embeddings, so similar conversations cluster — family
+  near family, the pikesquares/work chats in one knot. 403/501 positioned.
+- **Click a star → dossier.** A large in-page panel: emotional weather by month
+  (teal up = warmer, pink down = tenser), volume (me/them), signature words, and
+  **similar relationships** — the nearest chats by content, each clickable to
+  jump. This is the embeddings' payoff: who you talk to *like* you talk to
+  someone else.
+- **Topic river strip.** A toggleable bottom overview — the theme shares from
+  `topics.parquet`, redrawn as a live streamgraph over 2017–2026.
+
+Two fixes worth remembering for future you:
+
+- **Mean-centering.** Raw chat-mean embeddings all point the same way (everyday
+  chatter), so every cosine was ~0.99 and t-SNE collapsed into one blob.
+  Subtracting the global mean before cosine/t-SNE is what makes neighbours and
+  the galaxy meaningful.
+- **Code out of the tags.** Signature words now run through `is_code_heavy` plus
+  a `CODE_JUNK` denylist, so a chat that began in 2020 is no longer tagged with
+  code that only entered your life in 2024+.
+
+```bash
+.venv/bin/python art/constellation.py    # needs embeddings, sentiment, topics first
+```
+
 ---
 
 ## Meta-patterns — what the archive says when you step back
@@ -447,12 +487,13 @@ answer.
 | Topic river (sklearn clustering + streamgraph) | ✓ |
 | Sentiment scoring (resumable, RU classifier) | ✓ |
 | Conflict heatmap (keyword-based, per person) | ✓ |
+| Constellation Phase 2 layers (warmth · galaxy · dossier · river) | ✓ |
 
 ### Not yet built (in planned order)
 
 | Pass | What it adds |
 |---|---|
-| **Sentiment aggregates** | Monthly emotional-weather charts per relationship; me-vs-them warmth asymmetry; sentiment-based conflict view |
+| **Sentiment aggregates** | Per-relationship emotional weather now lives in the constellation dossier; still to do: me-vs-them warmth asymmetry and a sentiment-based conflict view |
 | **Gmail** | Streaming parser for the 7.6 GB mbox (metadata for all mail, bodies for sent mail); same word pipeline for email voice |
 | **Calendar + Maps** | `.ics` and JSON parsers into a unified timeline |
 | **Daily logs** | Schema + intake for Google Forms (mood, energy, sleep, exercise, reflection fields); join to Telegram/sentiment on date |
@@ -477,13 +518,15 @@ cd ~/dev/self\ data
 .venv/bin/python analysis/signature_words.py
 .venv/bin/python analysis/notes_generator.py      # your annotations survive
 .venv/bin/python analysis/people_registry.py      # only appends, never edits
-.venv/bin/python art/constellation.py
 
 # --- Phase 2: meaning layer ---
 .venv/bin/python analysis/embeddings.py           # *(repeat)* until FINISHED
 .venv/bin/python analysis/topics.py
 .venv/bin/python analysis/sentiment.py            # *(repeat)* until FINISHED
 .venv/bin/python analysis/conflict_heatmap.py     # optional; pick a person
+
+# --- art: constellation reads embeddings + sentiment + topics, so it runs last ---
+.venv/bin/python art/constellation.py
 ```
 
 Each script is idempotent: it reads from `raw/` or `processed/`, overwrites its
